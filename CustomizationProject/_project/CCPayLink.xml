@@ -1,0 +1,4 @@
+﻿<Table TableName="CCPayLink">
+    <Column TableName="CCPayLink" ColumnName="UsrFSOrderType" ColumnType="string" AllowNull="True" MaxLength="4" DecimalPrecision="2" DecimalLength="4" IsNewColumn="True" IsUnicode="True" />
+    <Column TableName="CCPayLink" ColumnName="UsrFSOrderNbr" ColumnType="string" AllowNull="True" MaxLength="15" DecimalPrecision="2" DecimalLength="15" IsNewColumn="True" IsUnicode="True" />
+</Table>
