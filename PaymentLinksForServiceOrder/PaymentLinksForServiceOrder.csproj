@@ -11,39 +11,74 @@
 	<PackageProjectUrl>https://github.com/Acumatica/PayLinksForServiceOrders</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Acumatica/PayLinksForServiceOrders</RepositoryUrl>
 	<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <OutputPath>..\CustomizationProjects\Bin</OutputPath>
+    <OutputPath>..\CustomizationProject\Bin</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
     <Reference Include="PX.CCProcessingBase">
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.CCProcessingBase.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="PX.Common">
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.Common.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="PX.Common.Std">
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.Common.Std.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="PX.CS.Contracts">
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.CS.Contracts.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="PX.Data">
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.Data.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="PX.Objects">
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.Objects.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="PX.Objects.FS">
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.Objects.FS.dll</HintPath>
+      <Private>False</Private>
     </Reference>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
+    <Reference Include="System">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Core">
+      <Private>False</Private>
+    </Reference>
     <Reference Include="System.Xml" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Update="System.Data">
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Update="System.Drawing">
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Update="System.IO.Compression.FileSystem">
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Update="System.Numerics">
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>
