@@ -12,7 +12,7 @@
                                 <Prop Key="SkinID" Value="Transparent" />
                                 <Prop Key="RenderStyle" Value="Simple" />
                                 <Prop Key="ID" Value="PayLinks" />
-                                <Prop Key="DataMember" Value="CurrentDocument" />
+                                <Prop Key="DataMember" Value="CurrentServiceOrder" />
                                 <Children Key="Template">
                                     <AddItem>
                                         <PXLayoutRule TypeFullName="PX.Web.UI.PXLayoutRule">
@@ -27,7 +27,7 @@
                                     <AddItem>
                                         <PXSelector TypeFullName="PX.Web.UI.PXSelector">
                                             <Prop Key="Virtual:ApplyStylesheetSkin" />
-                                            <Prop Key="DataField" Value="ProcessingCenterID" />
+                                            <Prop Key="DataField" Value="UsrProcessingCenterID" />
                                             <Prop Key="AutoRefresh" Value="true" />
                                             <Prop Key="CommitChanges" Value="True" />
                                             <Prop Key="ID" Value="PXSelProcCenter" />
@@ -37,7 +37,7 @@
                                         <PXDropDown TypeFullName="PX.Web.UI.PXDropDown">
                                             <Prop Key="Virtual:ApplyStylesheetSkin" />
                                             <Prop Key="CommitChanges" Value="True" />
-                                            <Prop Key="DataField" Value="DeliveryMethod" />
+                                            <Prop Key="DataField" Value="UsrDeliveryMethod" />
                                             <Prop Key="ID" Value="cmbDeliveryMethod" />
                                         </PXDropDown>
                                     </AddItem>
@@ -118,4 +118,26 @@
             <PXTabItem Text="Financial" OriginalIndex="4" />
         </Children>
     </PXTab>
+    <PXDataSource ID="ds" ParentId="phDS_ds" TypeFullName="PX.Web.UI.PXDataSource">
+        <Children Key="CallbackCommands">
+            <AddItem>
+                <PXDSCallbackCommand TypeFullName="PX.Web.UI.PXDSCallbackCommand">
+                    <Prop Key="Name" Value="CreateLink" />
+                    <Prop Key="Visible" Value="False" />
+                </PXDSCallbackCommand>
+            </AddItem>
+            <AddItem>
+                <PXDSCallbackCommand TypeFullName="PX.Web.UI.PXDSCallbackCommand">
+                    <Prop Key="Name" Value="SyncLink" />
+                    <Prop Key="Visible" Value="False" />
+                </PXDSCallbackCommand>
+            </AddItem>
+            <AddItem>
+                <PXDSCallbackCommand TypeFullName="PX.Web.UI.PXDSCallbackCommand">
+                    <Prop Key="Name" Value="ResendLink" />
+                    <Prop Key="Visible" Value="False" />
+                </PXDSCallbackCommand>
+            </AddItem>
+        </Children>
+    </PXDataSource>
 </Page>

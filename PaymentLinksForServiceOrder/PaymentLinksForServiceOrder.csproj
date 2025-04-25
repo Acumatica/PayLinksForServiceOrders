@@ -35,6 +35,10 @@
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.Data.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="PX.Data.BQL.Fluent">
+      <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.Data.BQL.Fluent.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="PX.Objects">
       <HintPath>..\..\..\Acumatica Sites\25r100\Bin\PX.Objects.dll</HintPath>
       <Private>False</Private>

@@ -1,0 +1,5 @@
+﻿<Table TableName="FSServiceOrder">
+    <Column TableName="FSServiceOrder" ColumnName="UsrProcessingCenterID" ColumnType="string" AllowNull="True" MaxLength="10" DecimalPrecision="0" DecimalLength="0" IsNewColumn="True" IsUnicode="True" />
+    <Column TableName="FSServiceOrder" ColumnName="UsrDeliveryMethod" ColumnType="string" AllowNull="True" MaxLength="1" DecimalPrecision="0" DecimalLength="0" IsNewColumn="True" />
+    <Column TableName="FSServiceOrder" ColumnName="UsrPayLinkID" ColumnType="int" AllowNull="True" DecimalPrecision="0" DecimalLength="0" IsNewColumn="True" IsUnicode="True" />
+</Table>

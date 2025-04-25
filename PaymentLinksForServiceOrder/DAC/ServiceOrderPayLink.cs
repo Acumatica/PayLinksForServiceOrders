@@ -1,28 +1,29 @@
 using PX.Data;
 using PX.Objects.CA;
 using PX.Objects.CC;
+using PX.Objects.CS;
 using PX.Objects.FS;
 
 namespace PaymentLinksForServiceOrder
 {
     public class ServiceOrderPayLink : PXCacheExtension<FSServiceOrder>
 	{
-		public static bool IsActive()
-		{
-			return true;
-		}
+        public static bool IsActive()
+        {
+            return PXAccess.FeatureInstalled<FeaturesSet.acumaticaPayments>();
+        }
 
-		#region PayLinkID
-		public abstract class payLinkID : PX.Data.BQL.BqlInt.Field<payLinkID> { }
+        #region PayLinkID
+        public abstract class usrPayLinkID : PX.Data.BQL.BqlInt.Field<usrPayLinkID> { }
 		/// <summary>
 		/// Acumatica specific Payment Link Id.
 		/// </summary>
 		[PXDBInt]
-		public int? PayLinkID { get; set; }
+		public int? UsrPayLinkID { get; set; }
 		#endregion
 
 		#region ProcessingCenterID
-		public abstract class processingCenterID : PX.Data.BQL.BqlString.Field<processingCenterID> { }
+		public abstract class usrProcessingCenterID : PX.Data.BQL.BqlString.Field<usrProcessingCenterID> { }
 		
 		[PXDBString(10, IsUnicode = true)]
 		[PXSelector(typeof(Search2<CCProcessingCenter.processingCenterID,
@@ -34,18 +35,18 @@ namespace PaymentLinksForServiceOrder
 				And<CCProcessingCenterBranch.branchID, Equal<Current<FSServiceOrder.branchID>>>>>>>),
 			DescriptionField = typeof(CCProcessingCenter.name))]
 		[PXUIField(DisplayName = "Processing Center", Visible = true, Enabled = true)]
-		public string ProcessingCenterID { get; set; }
+		public string UsrProcessingCenterID { get; set; }
 		#endregion
 
 		#region DeliveryMethod
-		public abstract class deliveryMethod : PX.Data.BQL.BqlString.Field<deliveryMethod> { }
+		public abstract class usrDeliveryMethod : PX.Data.BQL.BqlString.Field<usrDeliveryMethod> { }
 		/// <summary>
 		/// Payment Link delivery method (N - none, E - email).
 		/// </summary>
 		[PXDBString(1, IsFixed = true)]
 		[PayLinkDeliveryMethod.List]
 		[PXUIField(DisplayName = "Link Delivery Method")]
-		public string DeliveryMethod { get; set; }
+		public string UsrDeliveryMethod { get; set; }
 		#endregion
 	}
 }
