@@ -17,6 +17,7 @@ using PX.Objects.CC;
 using PX.Objects.CC.PaymentProcessing.Helpers;
 using PX.Objects.CS;
 using PX.Objects.Extensions.PayLink;
+using PX.Objects.Extensions.PaymentTransaction;
 using PX.Objects.FS;
 
 
@@ -44,11 +45,8 @@ namespace PaymentLinksForServiceOrder
 				{
 					var graph = PXGraph.CreateInstance<ServiceOrderEntry>();
 					var ext = graph.GetExtension<ServiceOrderEntryPayLink>();
-					var processSoLinks = ext.ProcessPayLinkFromRelatedOrders(doc);
 					graph.ServiceOrderRecords.Cache.Clear();
 					FSServiceOrder invoice = graph.ServiceOrderRecords.Search<FSServiceOrder.refNbr>(doc.RefNbr, doc.SrvOrdType);
-
-					if (processSoLinks && invoice.OpenDoc == false) return;
 
 					graph.ServiceOrderRecords.Current = invoice;
 					ext.CollectDataAndCreateLink();
@@ -57,35 +55,70 @@ namespace PaymentLinksForServiceOrder
 			return docs;
 		}
 
-		[PXOverride]
+        protected override bool CheckPayLinkRelatedToDoc(CCPayLink payLink)
+        {
+            bool flag = true;
+            PayLinkDocument current = PayLinkDocument.Current;
+            if (current != null && current.PayLinkID.HasValue)
+            {
+                if (PayLinkDocument.Cache.GetValueOriginal<PayLinkDocument.payLinkID>(current) as int? == current.PayLinkID)
+                {
+                    return flag;
+                }
+
+                PXEntryStatus status = PayLinkDocument.Cache.GetStatus(current);
+                if (status == PXEntryStatus.Inserted)
+                {
+                    flag = false;
+                }
+
+              var payLinkExt = PXCache<CCPayLink>.GetExtension<CCPayLink_Ext>(payLink);
+                if (status == PXEntryStatus.Updated)
+                {
+                    if (current.DocType != payLinkExt.UsrFSOrderType || current.RefNbr != payLinkExt.UsrFSOrderNbr)
+                    {
+                        flag = false;
+                    }
+                }
+
+                if (!flag)
+                {
+                    PayLinkDocument.Cache.SetValue<PayLinkDocument.payLinkID>(current, null);
+                }
+            }
+
+            return flag;
+        }
+
+        [PXOverride]
 		public virtual void Persist(Action baseMethod)
 		{
-			//var curDoc = Base.Document.Current;
-			//if (curDoc != null && curDoc.DocType == ARDocType.Invoice)
-			//{
-			//	var payLink = PayLink.SelectSingle();
+			var curDoc = Base.ServiceOrderRecords.Current;
+			if (curDoc != null)
+			{
+				var payLink = PayLink.SelectSingle();
 
-			//	if (payLink != null && CheckPayLinkRelatedToDoc(payLink)
-			//		&& payLink.NeedSync == false && PayLinkHelper.PayLinkOpen(payLink))
-			//	{
-			//		var needSync = payLink.Amount != curDoc.CuryDocBal
-			//			|| payLink.DueDate != curDoc.DueDate.Value;
+				if (payLink != null && CheckPayLinkRelatedToDoc(payLink)
+					&& payLink.NeedSync == false && PayLinkHelper.PayLinkOpen(payLink))
+				{
+					var needSync = payLink.Amount != curDoc.CuryEstimatedOrderTotal
+						|| payLink.DueDate != curDoc.OrderDate.Value;
 
-			//		var origCuryDocBal = Base.Document.Cache
-			//			.GetValueOriginal<FSServiceOrder.curyDocBal>(curDoc) as decimal?;
-			//		var origDueDate = Base.Document.Cache
-			//			.GetValueOriginal<FSServiceOrder.dueDate>(curDoc) as DateTime?;
+					var origCuryDocBal = Base.ServiceOrderRecords.Cache
+						.GetValueOriginal<FSServiceOrder.curyEstimatedOrderTotal>(curDoc) as decimal?;
+					var origDueDate = Base.ServiceOrderRecords.Cache
+						.GetValueOriginal<FSServiceOrder.orderDate>(curDoc) as DateTime?;
 
-			//		needSync = needSync && (curDoc.CuryDocBal != origCuryDocBal
-			//			|| curDoc.DueDate != origDueDate);
+					needSync = needSync && (curDoc.CuryEstimatedOrderTotal != origCuryDocBal
+						|| curDoc.OrderDate != origDueDate);
 
-			//		if (needSync)
-			//		{
-			//			payLink.NeedSync = needSync;
-			//			PayLink.Update(payLink);
-			//		}
-			//	}
-			//}
+					if (needSync)
+					{
+						payLink.NeedSync = needSync;
+						PayLink.Update(payLink);
+					}
+				}
+			}
 			baseMethod();
 		}
 
@@ -124,7 +157,6 @@ namespace PaymentLinksForServiceOrder
 			{
 				try
 				{
-					//ARReleaseProcessPayLink.ActivateDoNotSyncFlag();
 					CreatePayments(copyDoc, link, payLinkData);
 				}
 				catch (Exception ex)
@@ -132,85 +164,35 @@ namespace PaymentLinksForServiceOrder
 					payLinkProcessing.SetErrorStatus(ex, link);
 					throw;
 				}
-				finally
-				{
-					//ARReleaseProcessPayLink.ClearDoNotSyncFlag();
-				}
 			}
 
 			payLinkProcessing.SetLinkStatus(link, payLinkData);
 
-			//copyDoc = GetInvoiceFromDB(copyDoc);
+			copyDoc = PXSelectReadonly<FSServiceOrder, Where<FSServiceOrder.srvOrdType, Equal<Required<FSServiceOrder.srvOrdType>>,
+                And<FSServiceOrder.refNbr, Equal<Required<FSServiceOrder.refNbr>>>>>
+                .Select(Base, copyDoc.SrvOrdType, copyDoc.RefNbr);
 
-			//if ((copyDoc.OpenDoc == false || copyDoc.CuryDocBal == 0)
-			//	&& payLinkData.StatusCode == PX.CCProcessingBase.Interfaces.V2.PayLinkStatus.Open)
-			//{
-			//	var closeParams = new PayLinkProcessingParams();
-			//	closeParams.LinkGuid = link.NoteID;
-			//	closeParams.ExternalId = link.ExternalID;
-			//	payLinkProcessing.CloseLink(payLinkDoc, link, closeParams);
-			//	return;
-			//}
+			if ((copyDoc.OpenDoc == false || copyDoc.CuryEstimatedOrderTotal == 0)
+				&& payLinkData.StatusCode == PX.CCProcessingBase.Interfaces.V2.PayLinkStatus.Open)
+			{
+				var closeParams = new PayLinkProcessingParams();
+				closeParams.LinkGuid = link.NoteID;
+				closeParams.ExternalId = link.ExternalID;
+				payLinkProcessing.CloseLink(payLinkDoc, link, closeParams);
+				return;
+			}
 
-			//if (link.NeedSync == false || payLinkData.StatusCode == PX.CCProcessingBase.Interfaces.V2.PayLinkStatus.Closed
-			//	 || payLinkData.PaymentStatusCode == PX.CCProcessingBase.Interfaces.V2.PayLinkPaymentStatus.Paid)
-			//{
-			//	return;
-			//}
+			if (link.NeedSync == false || payLinkData.StatusCode == PX.CCProcessingBase.Interfaces.V2.PayLinkStatus.Closed
+				 || payLinkData.PaymentStatusCode == PX.CCProcessingBase.Interfaces.V2.PayLinkPaymentStatus.Paid)
+			{
+				return;
+			}
 
-			//var data = CollectDataToSyncLink(copyDoc, link);
-			//payLinkProcessing.SyncLink(payLinkDoc, link, data);
+			var data = CollectDataToSyncLink(copyDoc, link);
+			payLinkProcessing.SyncLink(payLinkDoc, link, data);
 		}
 
-		public virtual bool ProcessPayLinkFromRelatedOrders(FSServiceOrder inv)
-		{
-			bool ret = false;
-			var payLinkProcessing = GetPayLinkProcessing();
-
-			//foreach (var row in GetPayLinkOrdersRelatedToInvoice(inv))
-			//{
-			//	CCPayLink payLink = row.Item1;
-			//	SOOrder order = row.Item2;
-			//	SOOrderPayLink orderPayLink = Base.Caches[typeof(SOOrder)].GetExtension<SOOrderPayLink>(order);
-
-			//	var processed = PayLinkHelper.PayLinkWasProcessed(payLink);
-			//	if (processed || payLink.ExternalID == null) continue;
-
-			//	var doc = new PayLinkDocument();
-			//	doc.OrderType = payLink.OrderType;
-			//	doc.OrderNbr = payLink.OrderNbr;
-			//	doc.DeliveryMethod = payLink.DeliveryMethod;
-			//	doc.ProcessingCenterID = orderPayLink.ProcessingCenterID;
-
-			//	var payLinkData = payLinkProcessing.GetPayments(doc, payLink);
-			//	if (payLinkData.Transactions != null && payLinkData.Transactions.Any())
-			//	{
-			//		try
-			//		{
-			//			ret = true;
-			//			CreatePayments(order, payLink, payLinkData);
-			//		}
-			//		catch (Exception ex)
-			//		{
-			//			payLinkProcessing.SetErrorStatus(ex, payLink);
-			//			throw;
-			//		}
-			//	}
-
-			//	payLinkProcessing.SetLinkStatus(payLink, payLinkData);
-
-			//	if (payLinkData.PaymentStatusCode == PX.CCProcessingBase.Interfaces.V2.PayLinkPaymentStatus.PartiallyPaid
-			//		|| payLinkData.PaymentStatusCode == PX.CCProcessingBase.Interfaces.V2.PayLinkPaymentStatus.Unpaid)
-			//	{
-			//		var data = new PayLinkProcessingParams();
-			//		data.LinkGuid = payLink.NoteID;
-			//		data.ExternalId = payLink.ExternalID;
-			//		payLinkProcessing.CloseLink(doc, payLink, data);
-			//	}
-			//}
-			return ret;
-		}
-        protected override PX.Objects.CC.PaymentProcessing.PayLinkProcessing GetPayLinkProcessing()
+		protected override PX.Objects.CC.PaymentProcessing.PayLinkProcessing GetPayLinkProcessing()
         {
             ICCPaymentProcessingRepository paymentProcessingRepo = GetPaymentProcessingRepo();
             return new PayLinkProcessingExt(paymentProcessingRepo);
@@ -218,8 +200,8 @@ namespace PaymentLinksForServiceOrder
         public override void CollectDataAndCreateLink()
 		{
 			var doc = Base.ServiceOrderRecords.Current;
-			//CheckDocBeforeLinkCreation(doc);
-			var data = CollectDataToCreateLink(doc);
+
+            var data = CollectDataToCreateLink(doc);
 			PayLinkProcessingExt payLinkProcessing = (PayLinkProcessingExt)GetPayLinkProcessing();
 			var payLinkDoc = PayLinkDocument.Current;
 
@@ -228,7 +210,9 @@ namespace PaymentLinksForServiceOrder
 			{
 				payLink = payLinkProcessing.CreateLinkInDBFS(payLinkDoc, data);
 				PayLinkDocument.Update(payLinkDoc);
-				Base.Save.Press();
+
+                var docExt = Base.ServiceOrderRecords.Cache.GetExtension<ServiceOrderPayLink>(Base.ServiceOrderRecords.Current);
+                Base.Save.Press();
 				scope.Complete();
 			}
 
@@ -275,44 +259,42 @@ namespace PaymentLinksForServiceOrder
 
 			var disablePayLink = false;
 			var allowOverrideDeliveryMethod = false;
-			//var custClass = Base.customerclass.SelectSingle();
-			//if (custClass != null)
-			//{
-			//	var custClassExt = GetCustomerClassExt(custClass);
-			//	disablePayLink = custClassExt.DisablePayLink.GetValueOrDefault();
-			//	allowOverrideDeliveryMethod = custClassExt.AllowOverrideDeliveryMethod.GetValueOrDefault();
-			//}
+			var custClass = GetCustomerClass();
+			if (custClass != null)
+			{
+				var custClassExt = GetCustomerClassExt(custClass);
+				disablePayLink = custClassExt.DisablePayLink.GetValueOrDefault();
+				allowOverrideDeliveryMethod = custClassExt.AllowOverrideDeliveryMethod.GetValueOrDefault();
+			}
 
 			var docExt = PayLinkDocument.Current;
 			var link = PayLink.SelectSingle();
-			//var isInvocie = doc.DocType == ARDocType.Invoice;
-			//var released = doc.Released == true;
-			//var needNewLink = link?.Url == null || PayLinkHelper.PayLinkWasProcessed(link);
-			//var closedAndUnpaid = link != null && PayLinkHelper.PayLinkWasProcessed(link)
-			//	&& link.PaymentStatus == PayLinkPaymentStatus.Unpaid;
+			var needNewLink = link?.Url == null || PayLinkHelper.PayLinkWasProcessed(link);
+			var closedAndUnpaid = link != null && PayLinkHelper.PayLinkWasProcessed(link)
+				&& link.PaymentStatus == PX.Objects.CC.PayLinkPaymentStatus.Unpaid;
 
-			//createLink.SetEnabled(isInvocie && released && doc.OpenDoc == true
-			//	&& docExt.ProcessingCenterID != null && needNewLink && !disablePayLink);
-			//createLink.SetVisible(!disablePayLink && isInvocie);
-			//syncLink.SetEnabled(isInvocie && released && !needNewLink
-			//	&& !disablePayLink && docExt.ProcessingCenterID != null);
-			//syncLink.SetVisible(!disablePayLink && isInvocie);
-			//resendLink.SetEnabled(isInvocie && released && !needNewLink
-			//	&& docExt.ProcessingCenterID != null && !disablePayLink && docExt.DeliveryMethod == PayLinkDeliveryMethod.Email);
-			//resendLink.SetVisible(!disablePayLink && isInvocie);
+			createLink.SetEnabled(doc.OpenDoc == true
+				&& docExt.ProcessingCenterID != null && needNewLink && !disablePayLink);
+			createLink.SetVisible(!disablePayLink);
+			syncLink.SetEnabled(!needNewLink
+				&& !disablePayLink && docExt.ProcessingCenterID != null);
+			syncLink.SetVisible(!disablePayLink);
+			resendLink.SetEnabled(!needNewLink
+				&& docExt.ProcessingCenterID != null && !disablePayLink && docExt.DeliveryMethod == PayLinkDeliveryMethod.Email);
+			resendLink.SetVisible(!disablePayLink);
 
-			//var hidePayLinkFields = disablePayLink && PayLink.SelectSingle()?.Url == null;
-			//var payLinkControlsVisible = isInvocie && !hidePayLinkFields;
-			//var payLinkControlsEnabled = payLinkControlsVisible && (link?.Url == null || closedAndUnpaid);
+			var hidePayLinkFields = disablePayLink && PayLink.SelectSingle()?.Url == null;
+			var payLinkControlsVisible = !hidePayLinkFields;
+			var payLinkControlsEnabled = payLinkControlsVisible && (link?.Url == null || closedAndUnpaid);
 
-			//PXUIFieldAttribute.SetEnabled<ARInvoicePayLink.processingCenterID>(cache, doc, payLinkControlsEnabled);
-			//PXUIFieldAttribute.SetEnabled<ARInvoicePayLink.deliveryMethod>(cache, doc, payLinkControlsEnabled
-			//	&& allowOverrideDeliveryMethod);
+			PXUIFieldAttribute.SetEnabled<ServiceOrderPayLink.usrProcessingCenterID>(cache, doc, payLinkControlsEnabled);
+			PXUIFieldAttribute.SetEnabled<ServiceOrderPayLink.usrDeliveryMethod>(cache, doc, payLinkControlsEnabled
+				&& allowOverrideDeliveryMethod);
 
-			//PXUIFieldAttribute.SetVisible<ARInvoicePayLink.processingCenterID>(cache, doc, payLinkControlsVisible);
-			//PXUIFieldAttribute.SetVisible<ARInvoicePayLink.deliveryMethod>(cache, doc, payLinkControlsVisible);
-			//PXUIFieldAttribute.SetVisible<CCPayLink.url>(PayLink.Cache, null, payLinkControlsVisible);
-			//PXUIFieldAttribute.SetVisible<CCPayLink.linkStatus>(PayLink.Cache, null, payLinkControlsVisible);
+			PXUIFieldAttribute.SetVisible<ServiceOrderPayLink.usrProcessingCenterID>(cache, doc, payLinkControlsVisible);
+			PXUIFieldAttribute.SetVisible<ServiceOrderPayLink.usrDeliveryMethod>(cache, doc, payLinkControlsVisible);
+			PXUIFieldAttribute.SetVisible<CCPayLink.url>(PayLink.Cache, null, payLinkControlsVisible);
+			PXUIFieldAttribute.SetVisible<CCPayLink.linkStatus>(PayLink.Cache, null, payLinkControlsVisible);
 		}
 
 		protected virtual void _(Events.RowSelected<CCPayLink> e)
@@ -326,27 +308,25 @@ namespace PaymentLinksForServiceOrder
 
 		protected virtual void _(Events.FieldDefaulting<ServiceOrderPayLink.usrDeliveryMethod> e)
 		{
-			var row = e.Row as ARInvoice;
-			if (row?.DocType == ARDocType.Invoice)
-			{
-				//var custClass = Base.customerclass.SelectSingle();
-				//if (custClass == null) return;
+			var row = e.Row as FSServiceOrder;
 
-				//var custClassExt = GetCustomerClassExt(custClass);
-				//if (custClassExt.DisablePayLink.GetValueOrDefault() == false)
-				//{
-				//	e.NewValue = custClassExt.DeliveryMethod;
-				//}
+			var custClass = GetCustomerClass();
+			if (custClass == null) return;
+
+			var custClassExt = GetCustomerClassExt(custClass);
+			if (custClassExt.DisablePayLink.GetValueOrDefault() == false)
+			{
+				e.NewValue = custClassExt.DeliveryMethod;
 			}
 		}
 
 		protected virtual void _(Events.FieldUpdated<FSServiceOrder.curyID> e)
 		{
-			var invoice = (ARInvoice)e.Row;
+			var order = (FSServiceOrder)e.Row;
 			var cache = e.Cache;
-			if (invoice == null) return;
+			if (order == null) return;
 
-			cache.SetDefaultExt<ARInvoicePayLink.processingCenterID>(invoice);
+			cache.SetDefaultExt<ServiceOrderPayLink.usrProcessingCenterID>(order);
 		}
 
 		protected virtual void _(Events.FieldUpdated<FSServiceOrder, FSServiceOrder.branchID> e)
@@ -361,17 +341,17 @@ namespace PaymentLinksForServiceOrder
 			var payLink = PayLink.SelectSingle();
 			if (payLink?.Url != null && !PayLinkHelper.PayLinkWasProcessed(payLink)) return;
 
-			cache.SetDefaultExt<ARInvoicePayLink.processingCenterID>(invoice);
+			cache.SetDefaultExt<ServiceOrderPayLink.usrProcessingCenterID>(invoice);
 		}
 
 		protected virtual void _(Events.FieldUpdated<FSServiceOrder.customerID> e)
 		{
-			var invoice = (ARInvoice)e.Row;
+			var invoice = (FSServiceOrder)e.Row;
 			var cache = e.Cache;
 			if (invoice != null)
 			{
-				cache.SetDefaultExt<ARInvoicePayLink.deliveryMethod>(invoice);
-				cache.SetDefaultExt<ARInvoicePayLink.processingCenterID>(invoice);
+				cache.SetDefaultExt<ServiceOrderPayLink.usrDeliveryMethod>(invoice);
+				cache.SetDefaultExt<ServiceOrderPayLink.usrProcessingCenterID>(invoice);
 			}
 		}
 
@@ -379,53 +359,33 @@ namespace PaymentLinksForServiceOrder
 		{
 			var row = e.Row as FSServiceOrder;
 
-			if (row?.SrvOrdType == ARDocType.Invoice)
+			var disablePayLink = false;
+			var custClass = GetCustomerClass();
+			if (custClass != null)
 			{
-				var disablePayLink = false;
-				//var custClass = Base.customerclass.SelectSingle();
-				//if (custClass != null)
-				//{
-				//	var custClassExt = GetCustomerClassExt(custClass);
-				//	disablePayLink = custClassExt.DisablePayLink.GetValueOrDefault();
-				//}
+				var custClassExt = GetCustomerClassExt(custClass);
+				disablePayLink = custClassExt.DisablePayLink.GetValueOrDefault();
+			}
 
-				if (disablePayLink == false)
+			if (disablePayLink == false)
+			{
+				CCProcessingCenter procCenter = PXSelectJoin<CCProcessingCenter,
+					InnerJoin<CashAccount, On<CCProcessingCenter.cashAccountID, Equal<CashAccount.cashAccountID>>,
+					InnerJoin<CCProcessingCenterBranch, On<CCProcessingCenterBranch.processingCenterID, Equal<CCProcessingCenter.processingCenterID>>>>,
+					Where<CashAccount.curyID, Equal<Required<CashAccount.curyID>>,
+						And<CCProcessingCenter.allowPayLink, Equal<True>,
+						And<CCProcessingCenter.isActive, Equal<True>,
+						And<CCProcessingCenterBranch.defaultForBranch, Equal<True>,
+						And<CCProcessingCenterBranch.branchID, Equal<Required<CCProcessingCenterBranch.branchID>>>>>>>>
+					.Select(Base, row.CuryID, row.BranchID);
+
+				if (procCenter != null)
 				{
-					CCProcessingCenter procCenter = PXSelectJoin<CCProcessingCenter,
-						InnerJoin<CashAccount, On<CCProcessingCenter.cashAccountID, Equal<CashAccount.cashAccountID>>,
-						InnerJoin<CCProcessingCenterBranch, On<CCProcessingCenterBranch.processingCenterID, Equal<CCProcessingCenter.processingCenterID>>>>,
-						Where<CashAccount.curyID, Equal<Required<CashAccount.curyID>>,
-							And<CCProcessingCenter.allowPayLink, Equal<True>,
-							And<CCProcessingCenter.isActive, Equal<True>,
-							And<CCProcessingCenterBranch.defaultForBranch, Equal<True>,
-							And<CCProcessingCenterBranch.branchID, Equal<Required<CCProcessingCenterBranch.branchID>>>>>>>>
-						.Select(Base, row.CuryID, row.BranchID);
-
-					if (procCenter != null)
-					{
-						e.NewValue = procCenter.ProcessingCenterID;
-					}
+					e.NewValue = procCenter.ProcessingCenterID;
 				}
 			}
-		}
 
-		//protected virtual IEnumerable<Tuple<CCPayLink, SOOrder>> GetPayLinkOrdersRelatedToInvoice(ARInvoice inv)
-		//{
-		//	foreach (PXResult<SOOrder, CCPayLink, SOOrderShipment, ARRegister> row in PXSelectJoin<SOOrder,
-		//		InnerJoin<CCPayLink, On<CCPayLink.payLinkID, Equal<SOOrderPayLink.payLinkID>>,
-		//		InnerJoin<SOOrderShipment, On<SOOrderShipment.orderType, Equal<SOOrder.orderType>,
-		//			And<SOOrderShipment.orderNbr, Equal<SOOrder.orderNbr>>>,
-		//		InnerJoin<ARRegister, On<ARRegister.docType, Equal<SOOrderShipment.invoiceType>,
-		//			And<ARRegister.refNbr, Equal<SOOrderShipment.invoiceNbr>>>>>>,
-		//		Where<SOOrderShipment.invoiceType, Equal<Required<SOOrderShipment.invoiceType>>,
-		//			And<SOOrderShipment.invoiceNbr, Equal<Required<SOOrderShipment.invoiceNbr>>>>,
-		//		OrderBy<Asc<ARRegister.createdDateTime>>>.Select(Base, inv.DocType, inv.RefNbr))
-		//	{
-		//		CCPayLink payLink = row;
-		//		SOOrder order = row;
-		//		yield return new Tuple<CCPayLink, SOOrder>(payLink, order);
-		//	}
-		//}
+		}
 
 		protected virtual PayLinkProcessingParams CollectDataToSyncLink(FSServiceOrder doc, CCPayLink payLink)
 		{
@@ -465,14 +425,22 @@ namespace PaymentLinksForServiceOrder
 			return payLinkData;
         }
 
-        private PXResultset<CustomerClass> GetCustomerClass()
+        private CustomerClass GetCustomerClass()
         {
-            return SelectFrom<CustomerClass>
-				.Where<CustomerClass.customerClassID.IsEqual<@P.AsString>>.View.Select(Base,
-				Base.TaxCustomer.Current.CustomerClassID);
+			if (Base.TaxCustomer.Current != null)
+			{
+				return SelectFrom<CustomerClass>
+					.Where<CustomerClass.customerClassID.IsEqual<@P.AsString>>.View.Select(Base,
+					Base.TaxCustomer.Current.CustomerClassID);
+			}
+			else return null;
+        }
+        private CustomerClassPayLink GetCustomerClassExt(CustomerClass custClass)
+        {
+            return PXCache<CustomerClass>.GetExtension<CustomerClassPayLink>(custClass);
         }
 
-		protected virtual void CalculateAndSetLinkAmount(FSServiceOrder doc, PayLinkProcessingParams payLinkParams)
+        protected virtual void CalculateAndSetLinkAmount(FSServiceOrder doc, PayLinkProcessingParams payLinkParams)
 		{
 			var amountToSend = 0m;
 			var docExt = PayLinkDocument.Current;
@@ -485,26 +453,6 @@ namespace PaymentLinksForServiceOrder
 			List<DocumentDetailData> detailData = new List<DocumentDetailData>();
 			amountToSend += PopulateDocDetailData(detailData);
 			docData.DocumentDetails = detailData;
-
-			//var headerTaxes = CalculateHeaderTaxes(doc);
-			//if (headerTaxes > 0)
-			//{
-			//	docData.ExcludedTaxes = headerTaxes.Value;
-			//	amountToSend += docData.ExcludedTaxes;
-			//}
-
-			//var docDiscounts = CalculateDocDiscounts(doc);
-			//if (docDiscounts != 0)
-			//{
-			//	docData.DocDiscounts = docDiscounts.Value;
-			//	amountToSend += (-1 * docData.DocDiscounts);
-			//}
-
-			//if (doc.CuryFreightTot != 0)
-			//{
-			//	docData.Freight = doc.CuryFreightTot.Value;
-			//	amountToSend += docData.Freight;
-			//}
 
 			var aplDocData = new List<PX.CCProcessingBase.Interfaces.V2.AppliedDocumentData>();
 			amountToSend -= PopulateAppliedDocData(aplDocData, docExt, payLinkParams);
@@ -532,7 +480,7 @@ namespace PaymentLinksForServiceOrder
 			title = title.Trim();
 			return title;
 		}
-		private void CreatePayments(FSServiceOrder invoice, CCPayLink payLink, PayLinkData payLinkData,
+		private void CreatePayments(FSServiceOrder serviceOrder, CCPayLink payLink, PayLinkData payLinkData,
 			bool createStandalonePmt = false)
 		{
 			if (payLinkData.Transactions == null) return;
@@ -596,52 +544,25 @@ namespace PaymentLinksForServiceOrder
 
 					ARPayment payment = new ARPayment();
 					payment.AdjDate = pmtDate;
-					payment.BranchID = invoice.BranchID;
-					payment.DocType = ARDocType.Payment;
+					payment.BranchID = serviceOrder.BranchID;
+					payment.DocType = ARDocType.Prepayment;
 					payment = paymentGraph.Document.Insert(payment);
-					payment.CustomerID = invoice.CustomerID;
-					//payment.CustomerLocationID = invoice.CustomerLocationID;
-					//payment.ARAccountID = invoice.ARAccountID;
-					//payment.ARSubID = invoice.ARSubID;
+					payment.CustomerID = serviceOrder.CustomerID;
+					payment.CustomerLocationID = serviceOrder.LocationID;
+
 					payment.PaymentMethodID = paymentMethodId;
 					payment.CuryOrigDocAmt = tranData.Amount;
-					payment.DocDesc = invoice.DocDesc;
+					payment.DocDesc = serviceOrder.DocDesc;
 					payment = paymentGraph.Document.Update(payment);
-					//payment.PMInstanceID = PaymentTranExtConstants.NewPaymentProfile;
+					payment.PMInstanceID = PaymentTranExtConstants.NewPaymentProfile;
 					payment.ProcessingCenterID = pc.ProcessingCenterID;
 					payment.CashAccountID = cashAccId;
 					payment.Hold = false;
 					payment.DocDesc = PXMessages.LocalizeFormatNoPrefix(PX.Objects.CC.Messages.PayLinkPaymentDescr, payLink.DocType, payLink.RefNbr, payLink.ExternalID);
 					payment = paymentGraph.Document.Update(payment);
-					paymentGraph.Save.Press();
 
-					//if (!createStandalonePmt && invoice.CuryDocBal != 0)
-					//{
-					//	if (invoice.PaymentsByLinesAllowed == true)
-					//	{
-					//		foreach (ARTran tran in PXSelect<ARTran, Where<ARTran.tranType, Equal<Required<ARInvoice.docType>>,
-					//									And<ARTran.refNbr, Equal<Required<ARInvoice.refNbr>>,
-					//									And<ARTran.curyTranBal, NotEqual<Zero>>>>,
-					//									OrderBy<Desc<ARTran.curyTranBal>>>.Select(Base, invoice.DocType, invoice.RefNbr))
-					//		{
-					//			ARAdjust adj = new ARAdjust();
-					//			adj.AdjdDocType = invoice.DocType;
-					//			adj.AdjdRefNbr = invoice.RefNbr;
-					//			adj.AdjdLineNbr = tran.LineNbr;
-					//			paymentGraph.Adjustments.Insert(adj);
-
-					//			if (payment.CuryApplAmt >= tranData.Amount) break;
-					//		}
-					//	}
-					//	else
-					//	{
-					//		ARAdjust adj = new ARAdjust();
-					//		adj.AdjdDocType = invoice.DocType;
-					//		adj.AdjdRefNbr = invoice.RefNbr;
-					//		paymentGraph.Adjustments.Insert(adj);
-					//	}
-					paymentGraph.Save.Press();
-					//}
+					Base.InsertSOAdjustments(serviceOrder, null, paymentGraph, payment);
+                    paymentGraph.Save.Press();
 
 					var extension = paymentGraph.GetExtension<PX.Objects.AR.GraphExtensions.ARPaymentEntryPaymentTransaction>();
 					CCPaymentEntry entry = new CCPaymentEntry(paymentGraph);
@@ -657,14 +578,6 @@ namespace PaymentLinksForServiceOrder
 				throw ex;
 			}
 		}
-
-		//private void CheckDocBeforeLinkCreation(FSServiceOrder doc)
-		//{
-		//	if (doc.OpenDoc == false)
-		//	{
-		//		throw new PXException(PX.Objects.CC.Messages.CannotCreateLinkForDocument, doc.DocType, doc.RefNbr);
-		//	}
-		//}
 
 		private decimal PopulateAppliedDocData(List<AppliedDocumentData> aplDocData, PayLinkDocument payLinkDoc, PayLinkProcessingParams payLinkParams)
 		{
@@ -720,14 +633,6 @@ namespace PaymentLinksForServiceOrder
 			Base.ServiceOrderRecords.Current = Base.ServiceOrderRecords.Search<ARInvoice.refNbr>(doc.RefNbr, doc.SrvOrdType);
 		}
 
-		//protected virtual FSServiceOrder GetInvoiceFromDB(FSServiceOrder doc)
-		//{
-		//	FSServiceOrder fromDb = PXSelectReadonly<FSServiceOrder, Where<FSServiceOrder.docType, Equal<Required<FSServiceOrder.docType>>,
-		//		And<FSServiceOrder.refNbr, Equal<Required<FSServiceOrder.refNbr>>>>>
-		//		.Select(Base, doc.DocType, doc.RefNbr);
-		//	return fromDb;
-		//}
-
 		protected virtual PayLinkDocumentMapping GetMapping()
 		{
 			return new PayLinkDocumentMapping(typeof(FSServiceOrder))
@@ -759,64 +664,6 @@ namespace PaymentLinksForServiceOrder
 			}
 			return total;
 		}
-
-		//private decimal? CalculateDocDiscounts(ARInvoice invoice)
-		//{
-		//	var docDiscounts = 0m;
-		//	var discDetails = Base.ARDiscountDetails.Select().RowCast<ARInvoiceDiscountDetail>();
-		//	foreach (var discItem in discDetails.Where(i => i.SkipDiscount == false))
-		//	{
-		//		docDiscounts += discItem.CuryDiscountAmt.GetValueOrDefault();
-		//	}
-		//	return docDiscounts;
-		//}
-
-		//private decimal? CalculateHeaderTaxes(ARInvoice invoice)
-		//{
-		//	var headerTaxes = invoice.CuryTaxTotal;
-		//	var taxCalcMode = invoice.TaxCalcMode;
-
-		//	foreach (var taxItem in GetTaxes(invoice))
-		//	{
-		//		var taxRule = taxItem.Item2.TaxCalcRule;
-		//		var taxAmt = taxItem.Item1.CuryTaxAmt.GetValueOrDefault();
-		//		var compoundLineLevel = CSTaxCalcType.Item + CSTaxCalcLevel.CalcOnItemAmtPlusTaxAmt;
-		//		if (taxCalcMode == TaxCalculationMode.Gross && taxRule != compoundLineLevel)
-		//		{
-		//			headerTaxes -= taxAmt;
-		//		}
-		//		else if (taxItem.Item2.TaxCalcLevel == "0" && taxCalcMode != TaxCalculationMode.Net)
-		//		{
-		//			headerTaxes -= taxAmt;
-		//		}
-		//	}
-		//	return headerTaxes;
-		//}
-
-		//private List<Tuple<ARTaxTran, Tax>> GetTaxes(ARInvoice invoice)
-		//{
-		//	var res = PXSelectJoin<ARTaxTran, InnerJoin<Tax, On<ARTaxTran.taxID, Equal<Tax.taxID>>>,
-		//		Where<ARTaxTran.refNbr, Equal<Required<ARTaxTran.refNbr>>,
-		//			And<ARTaxTran.tranType, Equal<Required<ARTaxTran.tranType>>>>>
-		//	.Select(Base, invoice.RefNbr, invoice.DocType);
-
-		//	var taxList = new List<Tuple<ARTaxTran, Tax>>();
-		//	foreach (PXResult<ARTaxTran, Tax> item in res)
-		//	{
-		//		taxList.Add(Tuple.Create((ARTaxTran)item, (Tax)item));
-		//	}
-		//	return taxList;
-		//}
-
-		//private CustomerClassPayLink GetCustomerClassExt(CustomerClass custClass)
-		//{
-		//	return Base.customerclass.Cache.GetExtension<CustomerClassPayLink>(custClass);
-		//}
-
-		//public override void SetCurrentDocument(FSServiceOrder doc)
-		//{
-		//	throw new NotImplementedException();
-		//}
 
 		protected class PayLinkDocumentMapping : IBqlMapping
 		{
